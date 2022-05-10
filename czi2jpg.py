@@ -55,16 +55,6 @@ class CsvLoader:
             yield [c.strip('"') for c in r.split(',')]
 
 
-class Bbox:
-    def __init__(self, x, y, w, h):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
-    def rect(self):
-        return (self.x, self.y, self.w, self.h)
-
-
 class CziImageFile(object):
     def __init__(self, path):
         czi = CziFile(path)
@@ -95,8 +85,12 @@ class CziImageFile(object):
             )
             self.surface = [float(overall_z_element.text)]
 
-    def copyImagePortion(self, out: Image, x : int, y : int, source : BBox, scale : float):
+    def copyImagePortion(self, out: Image, x : int, y : int, source : (int, int, int, int), scale : float):
         data = self.czi.read_mosaic(region=source, scale_factor=1/scale, C=0)
+        rescaled = np.minimum(
+            np.multiply(data[0], 1.0/256.0),
+            255.0
+        )
         img = np.asarray(rescaled.astype(np.uint8))
         pil = Image.fromarray(img)
         out.paste(pil, (x, y))
@@ -116,19 +110,16 @@ class CziImageFile(object):
                 y = yi*ys
                 x_source = x * scale
                 y_source = y * scale
-                w_source = math.min(xs * scale, self.bbox.w - x_source)
-                h_source = math.min(ys * scale, self.bbox.h - y_source)
+                w_source = min(xs * scale, self.bbox.w - x_source)
+                h_source = min(ys * scale, self.bbox.h - y_source)
                 sbox = (
-                    self.bbox.x + x_source,
-                    self.bbox.y + y_source,
-                    w_source,
-                    h_source
+                    int(self.bbox.x + x_source),
+                    int(self.bbox.y + y_source),
+                    int(w_source),
+                    int(h_source)
                 )
                 self.copyImagePortion(r, x, y, sbox, scale)
         return r
-
-    def getBbox(self):
-        return self.bbox
 
     def loadPois(self, fh):
         csv = CsvLoader(fh)
@@ -172,6 +163,7 @@ parser.add_argument(
     dest='factor',
     required=False,
     default=1,
+    type=float,
 )
 parser.add_argument(
     '-o',
@@ -182,17 +174,17 @@ parser.add_argument(
 )
 parser.add_argument(
     help='input CZI file',
-    required=True,
     dest='input',
     metavar='INPUT_CZI',
 )
 options = parser.parse_args()
 
 czi = CziImageFile(getattr(options, 'input'))
-out = czi.createScaledImage(getattr(options, 'factor'))
+out = czi.createScaledImage(float(getattr(options, 'factor')))
 
-if hasattr(options, 'poi_file'):
-    with CsvLoader(getattr(options, 'poi_file')) as poi:
+poi_file = getattr(options, 'poi_file')
+if poi_file:
+    with CsvLoader(poi_file) as poi:
         nameRe = re.compile(r'([0-9]+)[^0-9]*$')
         regCount = 0
         for (t,x,y,z,name) in pos.generateRows():
