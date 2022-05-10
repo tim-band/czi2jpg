@@ -1,2 +1,2 @@
 from distutils.core import setup
-setup(name='manimal', version='0.12', py_modules=['manimal'])
+setup(name='czi2jpg', version='0.1', py_modules=['czi2jpg'])
