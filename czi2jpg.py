@@ -136,7 +136,7 @@ class CziImageFile(object):
         return (pois, regs)
 
 def drawPoint(image, x, y, label, fn):
-    size = 15
+    size = 11
     font_size = 20
     width = 3
     colour = (200,10,10)
@@ -148,13 +148,18 @@ def drawPoint(image, x, y, label, fn):
 
 def addPoi(image, x, y, label=None):
     def drawPoi(draw, size, colour, width):
+        size *= 1.4
         draw.ellipse([x - size, y - size, x + size, y + size], outline=colour, fill=None, width=width)
     drawPoint(image, x, y, label, drawPoi)
 
 def addRegPoint(image, x, y, label):
     def drawPoi(draw, size, colour, width):
-        draw.line([x - size, y - size, x + size, y + size], fill=colour, width=width)
-        draw.line([x - size, y + size, x + size, y - size], fill=colour, width=width)
+        mid_size = size * 0.25
+        for (sx,sy) in [(1,1), (1,-1), (-1,-1), (-1,1)]:
+            draw.line(
+                [x + sx * size, y + sy * size, x + sx * mid_size, y + sy * mid_size],
+                fill=colour, width=width
+            )
     drawPoint(image, x, y, label, drawPoi)
 
 parser = argparse.ArgumentParser(
