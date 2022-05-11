@@ -4,15 +4,9 @@ import argparse
 import math
 import numpy as np
 import os
-import pathlib
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageTk
-import queue
+from PIL import Image, ImageDraw, ImageFont
+import re
 import sys
-import threading
-import tkinter as tk
-from tkinter import ttk
-import tkinter.font as tkfont
-
 
 def strip_zen_nonsense(h):
     """
@@ -64,8 +58,8 @@ class CziImageFile(object):
         sy = czi.meta.find('Metadata/Scaling/Items/Distance[@Id="Y"]/Value')
         if sx == None or sy == None:
             raise Exception("No pixel size in metadata")
-        self.xscale = float(sx.text)
-        self.yscale = float(sy.text)
+        self.xscale = float(sx.text) * 1e6
+        self.yscale = float(sy.text) * 1e6
         focus_actions = czi.meta.findall(
             'Metadata/Information/TimelineTracks/TimelineTrack/TimelineElements/TimelineElement/EventInformation/FocusAction'
         )
@@ -121,26 +115,47 @@ class CziImageFile(object):
                 self.copyImagePortion(r, x, y, sbox, scale)
         return r
 
+    def toImagePoint(self, scale, sx, sy):
+        return (
+            math.floor((sx - self.bbox.x) / scale + 0.5),
+            math.floor((sy - self.bbox.y) / scale + 0.5)
+        )
+
     def loadPois(self, fh):
         csv = CsvLoader(fh)
         if not csv.headersAre('type,x,y,z,name'):
             raise Exception('Could not understand csv file')
-        self.pois = []
-        self.regs = []
+        pois = []
+        regs = []
         for (t,x,y,z,name) in csv.generateRows():
             if t == 'i':
                 if len(name) != 0:
-                    self.pois.append(float(x) / self.xscale, float(y) / self.yscale, name)
+                    pois.append((float(x) / self.xscale, float(y) / self.yscale, name))
             elif t == 'r':
-                self.regs.append(float(x) / self.xscale, float(y) / self.yscale)
+                regs.append((float(x) / self.xscale, float(y) / self.yscale))
+        return (pois, regs)
 
+def drawPoint(image, x, y, label, fn):
+    size = 15
+    font_size = 20
+    width = 3
+    colour = (200,10,10)
+    draw = ImageDraw.Draw(image)
+    fn(draw, size, colour, width)
+    if label:
+        font = ImageFont.truetype(font='arial.ttf', size=font_size)
+        draw.text((x + size, y + size), label, fill=colour, anchor='lm', font=font)
 
-def addPoi(image, x, y, label):
-    pass
+def addPoi(image, x, y, label=None):
+    def drawPoi(draw, size, colour, width):
+        draw.ellipse([x - size, y - size, x + size, y + size], outline=colour, fill=None, width=width)
+    drawPoint(image, x, y, label, drawPoi)
 
 def addRegPoint(image, x, y, label):
-    pass
-
+    def drawPoi(draw, size, colour, width):
+        draw.line([x - size, y - size, x + size, y + size], fill=colour, width=width)
+        draw.line([x - size, y + size, x + size, y - size], fill=colour, width=width)
+    drawPoint(image, x, y, label, drawPoi)
 
 parser = argparse.ArgumentParser(
     description= 'czi2jpg: '
@@ -166,34 +181,34 @@ parser.add_argument(
     type=float,
 )
 parser.add_argument(
-    '-o',
-    '--output',
-    help='output JPG file',
-    required=True,
-    dest='output'
-)
-parser.add_argument(
     help='input CZI file',
     dest='input',
     metavar='INPUT_CZI',
 )
+parser.add_argument(
+    help='output JPG file',
+    dest='output',
+    metavar='OUTPUT_JPG',
+)
 options = parser.parse_args()
 
 czi = CziImageFile(getattr(options, 'input'))
-out = czi.createScaledImage(float(getattr(options, 'factor')))
+scale = float(getattr(options, 'factor'))
+out = czi.createScaledImage(scale)
 
 poi_file = getattr(options, 'poi_file')
 if poi_file:
-    with CsvLoader(poi_file) as poi:
-        nameRe = re.compile(r'([0-9]+)[^0-9]*$')
-        regCount = 0
-        for (t,x,y,z,name) in pos.generateRows():
-            if t == 'i':
-                nameResult = nameRe.search(name)
-                if nameResult:
-                    addPoi(out, x, y, nameResult.group(1))
-            elif t == 'r':
-                regCount += 1
-                addRegPoint(out, x, y, regCount)
+    nameRe = re.compile(r'([0-9]+)[^0-9]*$')
+    regCount = 0
+    (pois, regs) = czi.loadPois(poi_file)
+    for (sx,sy,name) in pois:
+        (x,y) = czi.toImagePoint(scale, float(sx), float(sy))
+        nameResult = nameRe.search(name)
+        if nameResult:
+            addPoi(out, x, y, nameResult.group(1))
+    for (sx,sy) in regs:
+        (x,y) = czi.toImagePoint(scale, float(sx), float(sy))
+        regCount += 1
+        addRegPoint(out, x, y, str(regCount))
 
 out.save(getattr(options, 'output'))

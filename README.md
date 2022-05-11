@@ -4,12 +4,13 @@ Conversion from Zeiss microscopes CZI files to jpg, with downscaling
 and annotation.
 
 ```
-./czi2jpg.py -a poi.csv -d 4 -o output.jpg tiled.czi
+./czi2jpg.py -a poi.csv -d 4 tiled.czi output.jpg
 ```
 
 * `-a CSV` gives a list of points that should be annotated
 * `-d N` gives the downsampling factor (in both dimensions)
-* `-o`
+* input CZI file
+* output JPG file
 
 The CSV file has the format:
 
