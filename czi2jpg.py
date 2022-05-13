@@ -78,14 +78,17 @@ class CziImageFile(object):
                 or czi.meta.find('Metadata/HardwareSetting/ParameterCollection[@Id="MTBFocus"]/Position')
             )
             self.surface = [float(overall_z_element.text)]
+        self.imageBits = int(czi.meta.find('Metadata/Information/Image/ComponentBitCount').text)
 
     def copyImagePortion(self, out: Image, x : int, y : int, source : (int, int, int, int), scale : float):
+        pil_type = np.uint8
         data = self.czi.read_mosaic(region=source, scale_factor=1/scale, C=0)
-        rescaled = np.minimum(
-            np.multiply(data[0], 1.0/256.0),
-            255.0
-        )
-        img = np.asarray(rescaled.astype(np.uint8))
+        pil_bits = 8 * pil_type(0).nbytes
+        rescaled = np.floor(np.minimum(
+            np.multiply(data[0], 2**(pil_bits - self.imageBits)),
+            2**pil_bits - 1
+        ))
+        img = np.asarray(rescaled.astype(pil_type))
         pil = Image.fromarray(img)
         out.paste(pil, (x, y))
 
@@ -162,6 +165,12 @@ def addRegPoint(image, x, y, label):
             )
     drawPoint(image, x, y, label, drawPoi)
 
+def transform(m, x, y):
+    return (
+        x * m[0][0] + y * m[0][1] + m[0][2],
+        x * m[1][0] + y * m[1][1] + m[1][2]
+    )
+
 parser = argparse.ArgumentParser(
     description= 'czi2jpg: '
     + 'a command-line tool for converting a CZI (Carl Zeiss Image) '
@@ -174,6 +183,15 @@ parser.add_argument(
     required=False,
     dest='poi_file',
     metavar='POI-CSV',
+    type=argparse.FileType('r')
+)
+parser.add_argument(
+    '-m',
+    '--matrix',
+    help='input CSV file registration matrix to multiply annotations by',
+    required=False,
+    dest='reg_file',
+    metavar='REG-CSV',
     type=argparse.FileType('r')
 )
 parser.add_argument(
@@ -206,13 +224,25 @@ if poi_file:
     nameRe = re.compile(r'([0-9]+)[^0-9]*$')
     regCount = 0
     (pois, regs) = czi.loadPois(poi_file)
+    reg = [
+        [1, 0, 0],
+        [0, 1, 0]
+    ]
+    matrix_file = getattr(options, 'reg_file')
+    if matrix_file:
+        mfh = CsvLoader(matrix_file)
+        m = []
+        for (x,y,t) in mfh.generateRows():
+            m.append([float(x),float(y),float(t)])
     for (sx,sy,name) in pois:
-        (x,y) = czi.toImagePoint(scale, float(sx), float(sy))
+        (tx, ty) = transform(m, float(sx), float(sy))
+        (x,y) = czi.toImagePoint(scale, tx, ty)
         nameResult = nameRe.search(name)
         if nameResult:
             addPoi(out, x, y, nameResult.group(1))
     for (sx,sy) in regs:
-        (x,y) = czi.toImagePoint(scale, float(sx), float(sy))
+        (tx, ty) = transform(m, float(sx), float(sy))
+        (x,y) = czi.toImagePoint(scale, tx, ty)
         regCount += 1
         addRegPoint(out, x, y, str(regCount))
 
