@@ -124,18 +124,22 @@ class CziImageFile(object):
             math.floor((sy - self.bbox.y) / scale + 0.5)
         )
 
-    def loadPois(self, fh):
+    def loadPois(self, fh, m):
         csv = CsvLoader(fh)
         if not csv.headersAre('type,x,y,z,name'):
             raise Exception('Could not understand csv file')
         pois = []
         regs = []
         for (t,x,y,z,name) in csv.generateRows():
+            x = float(x)
+            y = float(y)
+            if m:
+                (x,y) = transform(m, x, y)
             if t == 'i':
                 if len(name) != 0:
-                    pois.append((float(x) / self.xscale, float(y) / self.yscale, name))
+                    pois.append((x / self.xscale, y / self.yscale, name))
             elif t == 'r':
-                regs.append((float(x) / self.xscale, float(y) / self.yscale))
+                regs.append((x / self.xscale, y / self.yscale))
         return (pois, regs)
 
 def drawPoint(image, x, y, label, fn):
@@ -166,10 +170,12 @@ def addRegPoint(image, x, y, label):
     drawPoint(image, x, y, label, drawPoi)
 
 def transform(m, x, y):
-    return (
-        x * m[0][0] + y * m[0][1] + m[0][2],
-        x * m[1][0] + y * m[1][1] + m[1][2]
-    )
+    if m:
+        return (
+            x * m[0][0] + y * m[0][1] + m[0][2],
+            x * m[1][0] + y * m[1][1] + m[1][2]
+        )
+    return (x, y)
 
 parser = argparse.ArgumentParser(
     description= 'czi2jpg: '
@@ -186,8 +192,8 @@ parser.add_argument(
     type=argparse.FileType('r')
 )
 parser.add_argument(
-    '-m',
-    '--matrix',
+    '-r',
+    '--reg',
     help='input CSV file registration matrix to multiply annotations by',
     required=False,
     dest='reg_file',
@@ -221,28 +227,23 @@ out = czi.createScaledImage(scale)
 
 poi_file = getattr(options, 'poi_file')
 if poi_file:
-    nameRe = re.compile(r'([0-9]+)[^0-9]*$')
-    regCount = 0
-    (pois, regs) = czi.loadPois(poi_file)
-    reg = [
-        [1, 0, 0],
-        [0, 1, 0]
-    ]
     matrix_file = getattr(options, 'reg_file')
+    reg = None
     if matrix_file:
         mfh = CsvLoader(matrix_file)
-        m = []
+        reg = []
         for (x,y,t) in mfh.generateRows():
-            m.append([float(x),float(y),float(t)])
+            reg.append([float(x),float(y),float(t)])
+    (pois, regs) = czi.loadPois(poi_file, reg)
+    nameRe = re.compile(r'([0-9]+)[^0-9]*$')
     for (sx,sy,name) in pois:
-        (tx, ty) = transform(m, float(sx), float(sy))
-        (x,y) = czi.toImagePoint(scale, tx, ty)
+        (x,y) = czi.toImagePoint(scale, sx, sy)
         nameResult = nameRe.search(name)
         if nameResult:
             addPoi(out, x, y, nameResult.group(1))
+    regCount = 0
     for (sx,sy) in regs:
-        (tx, ty) = transform(m, float(sx), float(sy))
-        (x,y) = czi.toImagePoint(scale, tx, ty)
+        (x,y) = czi.toImagePoint(scale, sx, sy)
         regCount += 1
         addRegPoint(out, x, y, str(regCount))
 
