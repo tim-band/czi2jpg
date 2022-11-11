@@ -92,7 +92,7 @@ class CziImageFile(object):
         pil = Image.fromarray(img)
         out.paste(pil, (x, y))
 
-    def createScaledImage(self, scale):
+    def createScaledImage(self, scale, flip=False):
         width = math.floor(self.bbox.w / scale + 0.5)
         height = math.floor(self.bbox.h / scale + 0.5)
         r = Image.new(mode='RGB', size=(width, height))
@@ -116,11 +116,16 @@ class CziImageFile(object):
                     int(h_source)
                 )
                 self.copyImagePortion(r, x, y, sbox, scale)
+        if flip:
+            return r.transpose(method=Image.Transpose.FLIP_LEFT_RIGHT)
         return r
 
-    def toImagePoint(self, scale, sx, sy):
+    def toImagePoint(self, scale, sx, sy, flip=False):
+        x = sx - self.bbox.x
+        if flip:
+            x = self.bbox.w - x
         return (
-            math.floor((sx - self.bbox.x) / scale + 0.5),
+            math.floor(x / scale + 0.5),
             math.floor((sy - self.bbox.y) / scale + 0.5)
         )
 
@@ -210,6 +215,12 @@ parser.add_argument(
     type=float,
 )
 parser.add_argument(
+    '-f',
+    '--flip',
+    help='flip the image (left/right)',
+    action='store_true'
+)
+parser.add_argument(
     help='input CZI file',
     dest='input',
     metavar='INPUT_CZI',
@@ -221,13 +232,13 @@ parser.add_argument(
 )
 options = parser.parse_args()
 
-czi = CziImageFile(getattr(options, 'input'))
-scale = float(getattr(options, 'factor'))
-out = czi.createScaledImage(scale)
+czi = CziImageFile(options.input)
+scale = float(options.factor)
+out = czi.createScaledImage(scale, options.flip)
 
-poi_file = getattr(options, 'poi_file')
+poi_file = options.poi_file
 if poi_file:
-    matrix_file = getattr(options, 'reg_file')
+    matrix_file = options.reg_file
     reg = None
     if matrix_file:
         mfh = CsvLoader(matrix_file)
@@ -237,14 +248,14 @@ if poi_file:
     (pois, regs) = czi.loadPois(poi_file, reg)
     nameRe = re.compile(r'([0-9]+)[^0-9]*$')
     for (sx,sy,name) in pois:
-        (x,y) = czi.toImagePoint(scale, sx, sy)
+        (x,y) = czi.toImagePoint(scale, sx, sy, options.flip)
         nameResult = nameRe.search(name)
         if nameResult:
             addPoi(out, x, y, nameResult.group(1))
     regCount = 0
     for (sx,sy) in regs:
-        (x,y) = czi.toImagePoint(scale, sx, sy)
+        (x,y) = czi.toImagePoint(scale, sx, sy, options.flip)
         regCount += 1
         addRegPoint(out, x, y, str(regCount))
 
-out.save(getattr(options, 'output'))
+out.save(options.output)

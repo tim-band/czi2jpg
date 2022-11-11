@@ -1,3 +1,5 @@
 *.whl
 requirements.txt
 meta.xml
+/build/
+/czi2jpg.egg-info/
