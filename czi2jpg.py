@@ -31,15 +31,17 @@ class CsvLoader:
         self.headers = [strip_zen_nonsense(h) for h in rows[0].split(',')]
         self.rows = [r for r in rows[1:] if r.strip(',"')]
 
-    def headersAre(self, cshs):
+    def headersStart(self, cshs):
         """
         Returns True iff cshs (a comma-separated list of headers) matches
-        the actual headers.
+        the leftmost actual headers.
         """
         if not self.headers:
             return False
         hs = cshs.split(',')
-        return hs == self.headers
+        if len(self.headers) < len(hs):
+            return False
+        return hs == self.headers[0:len(hs)]
 
     def rowCount(self):
         return len(self.rows)
@@ -131,11 +133,11 @@ class CziImageFile(object):
 
     def loadPois(self, fh, m):
         csv = CsvLoader(fh)
-        if not csv.headersAre('type,x,y,z,name'):
+        if not csv.headersStart('type,x,y,z,name'):
             raise Exception('Could not understand csv file')
         pois = []
         regs = []
-        for (t,x,y,z,name) in csv.generateRows():
+        for (t,x,y,z,name,*extras) in csv.generateRows():
             x = float(x)
             y = float(y)
             if m:
